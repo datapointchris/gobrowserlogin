@@ -21,5 +21,7 @@
 // cookie and requires the static header CSRFHeader on every request carrying
 // it. A cross-origin page cannot add that header without a CORS preflight the
 // API never approves, so a forged request is refused even from a sibling
-// subdomain, where SameSite does not apply.
+// subdomain, where SameSite does not apply. A navigation cannot carry the
+// header either, so the front end's files and every route a browser navigates
+// to are served without Authenticate.
 package gobrowserlogin
