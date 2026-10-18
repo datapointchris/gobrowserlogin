@@ -1,0 +1,62 @@
+# forge-managed
+version: "2"
+run:
+  modules-download-mode: readonly
+linters:
+  # A linter joins by name after the sweep that makes every Go module pass it,
+  # never as a preset. The last four catch a defect rather than a style.
+  enable:
+    - gocritic
+    - misspell
+    - nakedret
+    - unconvert
+    - wastedassign
+    - durationcheck # two time.Durations multiplied together
+    - nolintlint # a //nolint naming no linter, or one that no longer fires
+    - rowserrcheck # sql.Rows iterated with its Err never read
+    - sqlclosecheck # sql.Rows or sql.Stmt closed other than by defer
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      exclude-functions:
+        - (*github.com/fatih/color.Color).Printf
+        - (*github.com/fatih/color.Color).Print
+        - (*github.com/fatih/color.Color).Println
+    gocritic:
+      enabled-tags:
+        - diagnostic
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+    misspell:
+      locale: US
+    nakedret:
+      max-func-lines: 20
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+# gofumpt is deliberately absent, and enforced by the gofumpt hook
+# instead. golangci's copy has no module path, so it reads a module named
+# without a dot as stdlib and merges the local imports into the standard block.
+# Real gofumpt resolves the path from go.mod and splits them back out, so the two
+# would rewrite the same imports in opposite directions, and a repo could not
+# pass both.
+#
+# Passing module-path here cannot work: one config serves every module in a
+# repo, and a repo can hold more than one.
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

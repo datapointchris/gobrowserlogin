@@ -1,0 +1,40 @@
+# forge-managed
+[sqlfluff]
+# Substance only. sqlfluff's default ruleset is dominated by layout and
+# capitalization opinions. These four families catch things that are actually
+# wrong: unparsable SQL, ambiguous references, unused CTEs, missing statement
+# terminators.
+rules = ambiguous, references, structure, convention.terminator
+
+# Two rules inside those families are layout opinions too.
+#
+# RF04 (keywords as identifiers) fails on columns named `name`, `state`, `type`
+# and `action`. It catches nothing unparsable or ambiguous, and satisfying it on
+# a table that has already been migrated takes a migration renaming a column
+# that was never a problem.
+#
+# AM04 (unknown result column count) fires on `SELECT *`, which under sqlc is
+# the type-safe form: sqlc reads the schema and generates a struct per query, so
+# the column set is known at build time rather than restated by hand.
+exclude_rules = RF04, AM04
+
+# Line length is a layout opinion, and generated migrations routinely exceed it.
+max_line_length = 0
+
+# sqlc's named parameters, sqlc.arg(name), sqlc.narg(name) and sqlc.slice(name),
+# are not SQL, so sqlfluff reads the name inside as a bare column and reports it
+# as an unqualified reference. The placeholder templater replaces each one before
+# linting. The regex has no param_name group, so the replacement is the
+# parameter's position, which lints as a literal. A `?` marker is not matched
+# and parses as SQL.
+templater = placeholder
+
+[sqlfluff:templater:placeholder]
+param_regex = sqlc\.(n?arg|slice)\(\w+\)
+
+# RF02 reads a function call in an ORDER BY as a column reference, and calls it
+# unqualified when its text holds no dot, so `ORDER BY random()` fails in a query
+# that joins. A reference holding a bracket is a call and never a column. A
+# column passed to the call is its own reference and is still checked.
+[sqlfluff:rules:references.qualification]
+ignore_words_regex = \(
