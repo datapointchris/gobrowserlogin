@@ -135,6 +135,11 @@ func New(ctx context.Context, cfg Config) (*Sessions, error) {
 // where the cookie arrives without CSRFHeader. Any other error is the store
 // failing, which says nothing about the browser.
 //
+// It authenticates a script's request. A navigation, and anything a page
+// loads by URL, sends the cookie without the header and is refused. So the
+// front end's files and the routes a browser navigates to are served without
+// calling it.
+//
 // A session unused for IdleTimeout, or older than AbsoluteTimeout, has ended.
 // A request on a live session moves its idle deadline, writing the store at
 // most once a minute.

@@ -31,7 +31,7 @@ go get github.com/datapointchris/gobrowserlogin@latest   # a tagged module; ther
 ## Starting from scratch
 
 An API serving its own single-page front end on one origin mounts three
-routes and calls `Authenticate` from its middleware:
+routes and calls `Authenticate` from the middleware guarding its API routes:
 
 ```go
 db := stdlib.OpenDBFromPool(pool) // any database/sql PostgreSQL driver
@@ -59,7 +59,7 @@ mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Requ
     }
 })
 
-// in the API's authentication middleware, for every other route
+// in the middleware guarding the API's routes, which the front end's script calls
 identity, err := sessions.Authenticate(r)
 switch {
 case errors.Is(err, gobrowserlogin.ErrNoSession):    // 401: the front end sends the browser to log in
@@ -68,8 +68,17 @@ case err != nil:                                     // 503: the store failed
 }
 ```
 
-The login and callback routes are exempt from that middleware. Nobody holding
-a session reaches them.
+`Authenticate` authenticates a script's request, which carries the CSRF
+header. A navigation cannot carry it. So the login and callback routes, the
+front end's own files, and every route the browser navigates to sit outside
+that middleware.
+
+The same holds for anything a page loads by URL rather than by script. An
+`<img src>`, a download link, an `EventSource` and a WebSocket upgrade each
+send the session cookie without the header, and `Authenticate` refuses them
+with `ErrNoCSRFHeader`. A resource that needs the session is read with
+`fetch`, and the page shows it from there, through `URL.createObjectURL` for
+an image or a download.
 
 The front end sends the CSRF header on every request, and answers a 401 by
 navigating to the login route with the page it was on:
@@ -147,8 +156,14 @@ checked. The identity is decoded from the ID token's claims and then from the
 userinfo response, so a claim either one carries is kept. A userinfo
 response naming another subject is refused.
 
-Any session the browser already held is deleted. A new one is created under a
-new secret, so a cookie planted before the login names nothing after it.
+A new session is created under a new secret, so a cookie planted before the
+login names nothing after it. Where the provider shares this site, the browser
+also sends the session it held, and that session is deleted.
+
+**A refused answer links onward.** A refusal spends the attempt, and a reload
+of the callback sends the same code again. So the refusal page links to the
+attempt's `return_to` path, or to `/` where no attempt was read. The front end
+there answers its next 401 by starting a new login.
 
 ## `Authenticate` — one cookie, one header, and nothing a script can read
 

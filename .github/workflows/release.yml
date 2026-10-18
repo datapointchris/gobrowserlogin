@@ -15,9 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A library ships as a git tag, and the module proxy serves any tagged
-  # version on demand and caches it permanently. A broken tag cannot be
-  # retracted, only superseded, so nothing is tagged that did not pass.
+  # A library ships as a git tag. The module proxy caches every tagged version
+  # permanently. A broken tag can be retracted in a later go.mod but never
+  # removed, so nothing is tagged that did not pass.
   validate:
     uses: ./.github/workflows/validate.yml
 
