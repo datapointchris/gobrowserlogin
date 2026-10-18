@@ -80,19 +80,35 @@ with `ErrNoCSRFHeader`. A resource that needs the session is read with
 `fetch`, and the page shows it from there, through `URL.createObjectURL` for
 an image or a download.
 
-The front end sends the CSRF header on every request, and answers a 401 by
-navigating to the login route with the page it was on:
+The front end sends the CSRF header on every request. A read that gets a 401
+navigates to the login route with the page it was on. A write that gets a 401
+fails where it was made instead. Navigating would leave its caller unsettled,
+so the edit would be lost with no notice.
 
 ```js
+let loggingIn = false
+
 async function api(path, init = {}) {
   const resp = await fetch(path, { ...init, headers: { ...init.headers, 'X-CSRF': '1' } })
-  if (resp.status === 401) {
+  if (resp.status !== 401) return resp
+  if ((init.method ?? 'GET').toUpperCase() !== 'GET') {
+    throw new Error('Your login has ended, so this change was not saved.')
+  }
+  if (!loggingIn) {
+    loggingIn = true
     const here = location.pathname + location.search + location.hash
     location.assign('/api/auth/login?return_to=' + encodeURIComponent(here))
   }
-  return resp
+  return new Promise(() => {}) // the page is leaving, so nothing renders an error
 }
 ```
+
+A page's reads all get the 401 together, and `loggingIn` makes them one
+login. A login that completes while the API still answers 401, as with cookies
+blocked, would send the browser round the provider forever. So count the
+login starts in `sessionStorage`, and fail the read once a third page starts
+one inside a minute. Allow two, because the refused callback's link below
+starts a second.
 
 The provider needs the API registered as a confidential client:
 
