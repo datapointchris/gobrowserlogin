@@ -3,11 +3,13 @@ package gobrowserlogin
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
 	"testing"
 	"time"
@@ -130,11 +132,30 @@ func TestCallback_RefusesAnAnswerThisBrowserDidNotAskFor(t *testing.T) {
 
 	// Login CSRF: the attacker starts a login, and sends the victim's browser
 	// to the callback with the attacker's code.
-	callback := p.approve(attacker.startLogin(t, s, "/"), "")
+	callback := p.approve(attacker.startLogin(t, s, "/trips/5"), "")
 	resp := victim.navigate(s.Callback, callback)
 	if resp.StatusCode != http.StatusBadRequest || len(victim.cookies) != 0 {
 		t.Fatalf("callback answered %d and set %v", resp.StatusCode, victim.cookies)
 	}
+	// The victim's browser read no attempt, so the attacker's path is not its to follow.
+	if link := startAgainLink(t, resp); link != "/" {
+		t.Fatalf("the refusal links to %q", link)
+	}
+}
+
+// startAgainLink is where a refusal page's link goes, the step that works
+// from a callback a reload would only refuse again.
+func startAgainLink(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`<a href="([^"]*)">Start again</a>`).FindSubmatch(body)
+	if match == nil {
+		t.Fatalf("the refusal page carries no link: %s", body)
+	}
+	return string(match[1])
 }
 
 func TestCallback_CompletesEachAttemptOnce(t *testing.T) {
@@ -159,9 +180,12 @@ func TestCallback_RefusesAnAnswerNotNamingThisIssuer(t *testing.T) {
 			p := newProvider(t, true)
 			s := newTestSessions(t, p)
 			b := newBrowser()
-			resp := b.navigate(s.Callback, p.approve(b.startLogin(t, s, "/"), issuer))
+			resp := b.navigate(s.Callback, p.approve(b.startLogin(t, s, "/trips/5"), issuer))
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Fatalf("callback answered %d", resp.StatusCode)
+			}
+			if link := startAgainLink(t, resp); link != "/trips/5" {
+				t.Fatalf("the refusal links to %q, not the page the login started from", link)
 			}
 			if _, err := b.authenticate(s); !errors.Is(err, ErrNoSession) {
 				t.Fatalf("authenticate: %v", err)

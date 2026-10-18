@@ -21,25 +21,31 @@ import (
 // and the PKCE verifier, the ID token's signature, audience, expiry and nonce
 // are checked, and the userinfo response must name the same subject.
 //
-// A session the browser already held is deleted, and a new one is created
-// under a new secret, so a cookie planted before login names nothing after
-// it. The browser then goes to the attempt's return_to path.
+// A new session is created under a new secret, so a cookie planted before the
+// login names nothing after it. Where the provider shares this site, the
+// browser also sends the session it held, and that session is deleted. The
+// browser then goes to the attempt's return_to path.
+//
+// A refused answer cannot be retried: the attempt is spent, and a reload
+// sends the same code again. The refusal page links to the attempt's
+// return_to path instead, or to / where no attempt was read. The front end
+// there answers its next 401 by starting a new login.
 func (s *Sessions) Callback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	query := r.URL.Query()
-	const startAgain = "Reload the page to log in again."
+	again := "/"
 
 	state := query.Get("state")
 	if state == "" {
 		s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the callback carries no state")
-		refuse(w, http.StatusBadRequest, "The login server's answer is incomplete. "+startAgain)
+		refuse(w, http.StatusBadRequest, "The login server's answer is incomplete.", again)
 		return
 	}
 	name := attemptCookieName(state)
 	cookie, err := r.Cookie(name)
 	if err != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
 		s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the browser holds no cookie for this state")
-		refuse(w, http.StatusBadRequest, "This login was not started in this browser, or took longer than ten minutes. "+startAgain)
+		refuse(w, http.StatusBadRequest, "This login was not started in this browser, or took longer than ten minutes.", again)
 		return
 	}
 	clearCookie(w, name, http.SameSiteLaxMode)
@@ -47,18 +53,19 @@ func (s *Sessions) Callback(w http.ResponseWriter, r *http.Request) {
 	attempt, err := s.cfg.Store.TakeLoginAttempt(ctx, keyOf(state))
 	if errors.Is(err, ErrNotFound) {
 		s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the attempt was already used or has expired")
-		refuse(w, http.StatusBadRequest, "This login was already completed or has expired. "+startAgain)
+		refuse(w, http.StatusBadRequest, "This login was already completed or has expired.", again)
 		return
 	}
 	if err != nil {
 		s.cfg.Logger.ErrorContext(ctx, "could not read a login attempt", "error", err)
-		refuse(w, http.StatusServiceUnavailable, "The login could not be completed. "+startAgain)
+		refuse(w, http.StatusServiceUnavailable, "The login could not be completed.", again)
 		return
 	}
+	again = attempt.ReturnTo
 	now := s.now()
 	if !now.Before(attempt.ExpiresAt) {
 		s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the attempt expired")
-		refuse(w, http.StatusBadRequest, "This login took longer than ten minutes. "+startAgain)
+		refuse(w, http.StatusBadRequest, "This login took longer than ten minutes.", again)
 		return
 	}
 
@@ -67,7 +74,7 @@ func (s *Sessions) Callback(w http.ResponseWriter, r *http.Request) {
 	if issuer := query.Get("iss"); issuer != "" || s.issuerParameter {
 		if issuer != s.cfg.Issuer {
 			s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the answer names another issuer", "iss", issuer)
-			refuse(w, http.StatusBadRequest, "The answer did not come from this site's login server. "+startAgain)
+			refuse(w, http.StatusBadRequest, "The answer did not come from this site's login server.", again)
 			return
 		}
 	}
@@ -77,20 +84,20 @@ func (s *Sessions) Callback(w http.ResponseWriter, r *http.Request) {
 		if code == "access_denied" {
 			status = http.StatusForbidden
 		}
-		refuse(w, status, "The login server refused the login ("+code+"). "+startAgain)
+		refuse(w, status, "The login server refused the login ("+code+").", again)
 		return
 	}
 	code := query.Get("code")
 	if code == "" {
 		s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the callback carries no code")
-		refuse(w, http.StatusBadRequest, "The login server's answer is incomplete. "+startAgain)
+		refuse(w, http.StatusBadRequest, "The login server's answer is incomplete.", again)
 		return
 	}
 
 	identity, err := s.redeem(oidc.ClientContext(ctx, s.cfg.HTTPClient), code, attempt)
 	if err != nil {
 		s.cfg.Logger.ErrorContext(ctx, "login refused", "reason", err)
-		refuse(w, http.StatusBadGateway, "The login could not be completed with the login server. "+startAgain)
+		refuse(w, http.StatusBadGateway, "The login could not be completed with the login server.", again)
 		return
 	}
 
@@ -103,7 +110,7 @@ func (s *Sessions) Callback(w http.ResponseWriter, r *http.Request) {
 	session := Session{Identity: identity, CreatedAt: now, SeenAt: now, ExpiresAt: s.expiresAt(now, now)}
 	if err := s.cfg.Store.SaveSession(ctx, keyOf(secret), session); err != nil {
 		s.cfg.Logger.ErrorContext(ctx, "could not record a session", "error", err)
-		refuse(w, http.StatusServiceUnavailable, "The login could not be completed. "+startAgain)
+		refuse(w, http.StatusServiceUnavailable, "The login could not be completed.", again)
 		return
 	}
 	setCookie(w, sessionCookie, secret, s.cfg.AbsoluteTimeout, http.SameSiteStrictMode)

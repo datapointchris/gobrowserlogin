@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -38,7 +39,7 @@ func (s *Sessions) Login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	returnTo, err := localPath(r.URL.Query().Get(ReturnToParameter))
 	if err != nil {
-		refuse(w, http.StatusBadRequest, err.Error())
+		refuse(w, http.StatusBadRequest, err.Error(), "")
 		return
 	}
 
@@ -53,14 +54,14 @@ func (s *Sessions) Login(w http.ResponseWriter, r *http.Request) {
 	attempt := LoginAttempt{Nonce: nonce, CodeVerifier: verifier, ReturnTo: returnTo, ExpiresAt: now.Add(attemptLifetime)}
 	if err := s.cfg.Store.SaveLoginAttempt(ctx, keyOf(state), attempt); err != nil {
 		s.cfg.Logger.ErrorContext(ctx, "could not record a login attempt", "error", err)
-		refuse(w, http.StatusServiceUnavailable, "The login could not start. Reload the page to try again.")
+		refuse(w, http.StatusServiceUnavailable, "The login could not start. Reload the page to try again.", "")
 		return
 	}
 
 	target, err := s.authorizationURL(oidc.ClientContext(ctx, s.cfg.HTTPClient), state, nonce, verifier)
 	if err != nil {
 		s.cfg.Logger.ErrorContext(ctx, "could not start a login at the provider", "error", err)
-		refuse(w, http.StatusBadGateway, "The login server did not accept the login. Reload the page to try again.")
+		refuse(w, http.StatusBadGateway, "The login server did not accept the login. Reload the page to try again.", "")
 		return
 	}
 	setCookie(w, attemptCookieName(state), state, attemptLifetime, http.SameSiteLaxMode)
@@ -161,10 +162,28 @@ func localPath(raw string) (string, error) {
 	return raw, nil
 }
 
-// refuse answers a navigation the library could not complete. The browser
-// shows the sentence, so it says what to do next, and the reason goes to the
-// log instead.
-func refuse(w http.ResponseWriter, status int, sentence string) {
-	w.Header().Set("Cache-Control", "no-store")
-	http.Error(w, sentence, status)
+// refusalPage is what a navigation the library could not complete lands on.
+// The browser shows it, so it says what happened and how to go on. The reason
+// goes to the log instead.
+var refusalPage = template.Must(template.New("refusal").Parse(`<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login</title>
+<p>{{.Sentence}}{{with .Again}} <a href="{{.}}">Start again</a>.{{end}}</p>
+</html>
+`))
+
+// refuse writes the refusal page. again is the path its link opens, where a
+// reload of this page would not work. Empty writes no link.
+func refuse(w http.ResponseWriter, status int, sentence, again string) {
+	header := w.Header()
+	header.Set("Content-Type", "text/html; charset=utf-8")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Content-Security-Policy", "default-src 'none'")
+	header.Set("Cache-Control", "no-store")
+	// The callback's URL carries the code, which the link must not send on.
+	header.Set("Referrer-Policy", "no-referrer")
+	w.WriteHeader(status)
+	_ = refusalPage.Execute(w, struct{ Sentence, Again string }{sentence, again})
 }
