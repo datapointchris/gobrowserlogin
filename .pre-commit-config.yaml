@@ -1,4 +1,4 @@
-# forge-toolchain: 46
+# forge-toolchain: 48
 fail_fast: true
 default_stages: [pre-commit]
 repos:
@@ -10,6 +10,29 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
         args: [--strict]
+
+# generated:go-release-major - Refuse a commit message that would cut a major release
+  - repo: local
+    hooks:
+      - id: no-major-release-marker
+        name: Refuse a commit that would cut a major
+        # A major on a Go module here is an outage, not a version: no module path
+        # carries a /vN suffix, so `go install …@latest` cannot see the new tag
+        # and silently resolves the highest v1 instead. The analyzer matches this
+        # marker unanchored against the raw message and ORs it with the
+        # configured rules, so .semrelrc cannot stop it and it majors even a
+        # `fix:`. A ban written in prose does not stop it either, because nothing
+        # reads the prose between the commit and the release.
+        #
+        # $HOME is not usable here and no script is either: this has to run on
+        # any clone, so the whole check is inline. pre-commit execs entry without
+        # a shell, hence `bash -c … --`, after which $1 is the message file.
+        #
+        # Comments are stripped first. git discards them, so a commit template
+        # that names the marker must not fail a commit that does not use it.
+        entry: bash -c 'grep -vE "^#" "$1" | grep -qiE "breaking[ -]changes?" && { echo "This message would cut a major release, which strands every installed binary."; echo "Use chore(release-major) to major on purpose, or say it another way."; exit 1; }; exit 0' --
+        language: system
+        stages: [commit-msg]
 
 # generated:file-checks - File format and basic checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
