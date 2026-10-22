@@ -28,7 +28,20 @@ const (
 	// defaultProviderTimeout bounds each request to the provider made through
 	// the default client.
 	defaultProviderTimeout = 10 * time.Second
+
+	// userAgent names this library to the provider on the default client. A
+	// bot filter in front of a provider can refuse Go's default.
+	userAgent = "gobrowserlogin"
 )
+
+// namedAgent sets the User-Agent on every request it carries.
+type namedAgent struct{ base http.RoundTripper }
+
+func (n namedAgent) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("User-Agent", userAgent)
+	return n.base.RoundTrip(req)
+}
 
 // Config is one web API's login for its browser front end, at one provider.
 // Issuer, ClientID, ClientSecret, RedirectURL and Store are required. Every
@@ -68,10 +81,10 @@ type Config struct {
 	AbsoluteTimeout time.Duration
 
 	// HTTPClient makes every request to the provider. Nil means a client
-	// with a ten-second timeout. A client with no Timeout is refused,
-	// because go-oidc fetches the provider's signing keys under no other
-	// deadline. A provider behind a bot filter may refuse Go's default
-	// User-Agent, which the client's Transport can replace.
+	// with a ten-second timeout that names gobrowserlogin as its User-Agent,
+	// because a provider behind a bot filter may refuse Go's default. A
+	// client with no Timeout is refused, because go-oidc fetches the
+	// provider's signing keys under no other deadline.
 	HTTPClient *http.Client
 
 	// Logger receives each refused login with its reason, which the browser
@@ -127,7 +140,7 @@ func (c Config) resolve() (resolved, error) {
 		c.AbsoluteTimeout = DefaultAbsoluteTimeout
 	}
 	if c.HTTPClient == nil {
-		c.HTTPClient = &http.Client{Timeout: defaultProviderTimeout}
+		c.HTTPClient = &http.Client{Timeout: defaultProviderTimeout, Transport: namedAgent{base: http.DefaultTransport}}
 	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()

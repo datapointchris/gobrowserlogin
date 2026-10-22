@@ -46,6 +46,7 @@ func testSigningKey(t *testing.T) *rsa.PrivateKey {
 // provider is an OIDC provider that refuses what a real one refuses: a token
 // request with the wrong client secret or PKCE verifier, a code used twice,
 // and, where it takes pushed requests, a browser carrying the whole request.
+// Like one behind a bot filter, it refuses Go's default User-Agent.
 type provider struct {
 	t      *testing.T
 	server *httptest.Server
@@ -66,7 +67,13 @@ func newProvider(t *testing.T, push bool) *provider {
 	mux.HandleFunc("POST /par", p.pushRequest)
 	mux.HandleFunc("POST /token", p.token)
 	mux.HandleFunc("GET /userinfo", p.userinfo)
-	p.server = httptest.NewServer(mux)
+	p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("User-Agent"), "Go-http-client/") {
+			http.Error(w, "refused by the bot filter", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(p.server.Close)
 	return p
 }
