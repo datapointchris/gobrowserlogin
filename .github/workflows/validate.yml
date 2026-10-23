@@ -1,4 +1,4 @@
-# forge-toolchain: 49
+# forge-toolchain: 52
 name: CI
 
 on:
@@ -242,7 +242,7 @@ jobs:
             go-build-repo-mod
             go-mod-tidy-repo
             go-test-repo-mod
-            actionlint
+            jactionlint
             sqlfluff-lint
           )
           # Every hook runs whatever the one before it found, so one push
