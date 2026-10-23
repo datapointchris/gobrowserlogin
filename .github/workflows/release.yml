@@ -13,6 +13,7 @@ permissions:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   # A library ships as a git tag. The module proxy caches every tagged version
