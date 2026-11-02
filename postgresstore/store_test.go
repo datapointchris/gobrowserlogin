@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/url"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -16,10 +19,13 @@ import (
 	"github.com/datapointchris/gobrowserlogin/postgresstore"
 )
 
-// startPostgres runs a throwaway PostgreSQL and returns a database on it with
-// no tables.
+// startPostgres returns a database with no tables: a new one on the server
+// TEST_DATABASE_URL names, or one on a throwaway PostgreSQL where it is unset.
 func startPostgres(t *testing.T) *sql.DB {
 	t.Helper()
+	if server := os.Getenv("TEST_DATABASE_URL"); server != "" {
+		return newDatabase(t, server)
+	}
 	ctx := context.Background()
 	container, err := postgres.Run(ctx, "postgres:16-alpine",
 		postgres.WithDatabase("app"), postgres.WithUsername("app"), postgres.WithPassword("app"),
@@ -32,6 +38,34 @@ func startPostgres(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return open(t, dsn)
+}
+
+// newDatabase creates a database on server for this test alone, and drops it
+// once the test ends.
+func newDatabase(t *testing.T, server string) *sql.DB {
+	t.Helper()
+	admin := open(t, server)
+	name := fmt.Sprintf("store_test_%d", time.Now().UnixNano())
+	if _, err := admin.Exec("CREATE DATABASE " + name); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := admin.Exec("DROP DATABASE " + name + " WITH (FORCE)"); err != nil {
+			t.Errorf("drop the test's database %s: %v", name, err)
+		}
+	})
+	dsn, err := url.Parse(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn.Path = "/" + name
+	return open(t, dsn.String())
+}
+
+// open opens dsn and closes it once the test ends.
+func open(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatal(err)

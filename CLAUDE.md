@@ -60,11 +60,13 @@ automatically right.
   PostgreSQL. `pgx` is the driver the tests open it with. Neither is compiled
   into a consumer.
 
-## The PostgreSQL test needs Docker
+## The PostgreSQL test needs Docker, or a server `TEST_DATABASE_URL` names
 
-`go test ./...` starts a PostgreSQL container for `postgresstore`. `-short`
-skips it, which is what the commit hook runs. CI runs the whole suite on a
-GitHub-hosted runner, which has Docker.
+`go test ./...` starts a PostgreSQL container for `postgresstore`. Where
+`TEST_DATABASE_URL` is set, the test creates a database of its own on that
+server instead, and drops it at the end. The URL's user must be able to create
+databases. `-short` skips it, which is what the commit hook runs. CI runs the
+whole suite on a GitHub-hosted runner, which has Docker.
 
 ## Never write the breaking-change trailer in a commit message
 
