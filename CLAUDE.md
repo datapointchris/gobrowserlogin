@@ -17,6 +17,7 @@ automatically right.
 | `config.go` | `Config`, its defaults and its validation |
 | `sessions.go` | `Sessions`, `New`, `Authenticate`, `Logout`, the cookie policy, `CSRFHeader` |
 | `login.go` | `Login`, the pushed authorization request, `return_to` checking |
+| `connecting.go` | `Connecting`: `Sessions` built in the background, and what each route answers until then |
 | `callback.go` | `Callback`: the browser binding, the issuer check, redemption |
 | `store.go` | `Store`, `Key`, `Session`, `LoginAttempt`, `Identity` |
 | `postgresstore/` | The PostgreSQL `Store` and its `Schema` |

@@ -131,6 +131,7 @@ Otherwise every login asks the user to approve their own application.
 | How does a browser log out | `Logout` | the session cookie, the CSRF header, and the Store |
 | Where do sessions live | `Store`, `postgresstore.New` | PostgreSQL, through `database/sql` |
 | What tables does that need | `postgresstore.Schema` | — |
+| How does the API start while the provider is down | `NewConnecting`, then `Run` | the same, retried in the background |
 
 ## `Login` and `Callback` — a code completes one login, in the browser that asked for it
 
@@ -224,6 +225,38 @@ log anyone out. The response is the caller's to write.
 It does not end the user's session at the provider. Where the provider still
 holds one, the next login completes without asking anything. Ending that
 session means sending the browser to the provider's own logout page.
+
+## `Connecting` — the API serves while the provider is down, and only the login waits
+
+`New` reads the provider's discovery document once. An API calling it at
+start cannot start while the provider or its database is down, and one that
+also takes bearer tokens loses those clients with it. `NewConnecting` takes
+the same `Config` with `Store` left nil, and a function opening the store.
+It checks the configuration at once, so an address that can never work stops
+the API at start. `Run` then opens the store and reads the provider in the
+background, retrying with a wait that doubles to a minute.
+
+```go
+login, err := gobrowserlogin.NewConnecting(cfg, func(ctx context.Context) (gobrowserlogin.Store, error) {
+    return postgresstore.New(ctx, db)
+})
+go login.Run(ctx)
+```
+
+`Connecting` has `Login`, `Callback`, `Logout` and `Authenticate`, mounted as
+above. Until `Run` gets through:
+
+- `Login` and `Callback` answer a 503 page with `Retry-After`.
+- `Authenticate` returns `ErrNotReady` for a request presenting a session and
+  the CSRF header. A request presenting no session is still `ErrNoSession`, so
+  an API that also takes bearer tokens answers it with its 401 challenge.
+- `Logout` returns `ErrNotReady` for a request holding a session.
+
+`Ready` is nil once `Run` has got through, and wraps the last failure before
+then. Keep it out of a readiness probe where the API serves anything without
+the login, or a provider outage takes those requests down with it. `Run` logs
+each failure to `Config.Logger`: at Error where the discovery document rules
+the client out, and at Warn otherwise.
 
 ## `postgresstore` — two tables, created by the application's migrations
 

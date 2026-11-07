@@ -98,7 +98,9 @@ type resolved struct {
 	scopes []string
 }
 
-func (c Config) resolve() (resolved, error) {
+// resolve checks c and applies its defaults. storeOpensLater passes a nil
+// Store, for a Connecting that opens its own.
+func (c Config) resolve(storeOpensLater bool) (resolved, error) {
 	var problems []error
 	if err := secureURL("Issuer", c.Issuer); err != nil {
 		problems = append(problems, err)
@@ -112,7 +114,7 @@ func (c Config) resolve() (resolved, error) {
 	if err := secureURL("RedirectURL", c.RedirectURL); err != nil {
 		problems = append(problems, err)
 	}
-	if c.Store == nil {
+	if c.Store == nil && !storeOpensLater {
 		problems = append(problems, errors.New("Store is nil"))
 	}
 	if c.IdleTimeout < 0 || c.AbsoluteTimeout < 0 {

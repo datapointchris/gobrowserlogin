@@ -93,7 +93,7 @@ type providerMetadata struct {
 // cfg. It fails where the document cannot be read, or names an issuer other
 // than cfg.Issuer.
 func New(ctx context.Context, cfg Config) (*Sessions, error) {
-	r, err := cfg.resolve()
+	r, err := cfg.resolve(false)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func New(ctx context.Context, cfg Config) (*Sessions, error) {
 		return nil, fmt.Errorf("gobrowserlogin: decode %s's discovery document: %w", r.Issuer, err)
 	}
 	if len(metadata.TokenAuthMethods) > 0 && !slices.Contains(metadata.TokenAuthMethods, "client_secret_basic") {
-		return nil, fmt.Errorf("gobrowserlogin: %s does not accept client_secret_basic at its token endpoint, only %v", r.Issuer, metadata.TokenAuthMethods)
+		return nil, fmt.Errorf("gobrowserlogin: %s does not accept client_secret_basic at its token endpoint, only %v: %w", r.Issuer, metadata.TokenAuthMethods, errProviderRefusesClient)
 	}
 
 	endpoint := provider.Endpoint()
@@ -144,16 +144,13 @@ func New(ctx context.Context, cfg Config) (*Sessions, error) {
 // A request on a live session moves its idle deadline, writing the store at
 // most once a minute.
 func (s *Sessions) Authenticate(r *http.Request) (Identity, error) {
-	cookie, err := r.Cookie(sessionCookie)
-	if err != nil || cookie.Value == "" {
-		return Identity{}, ErrNoSession
-	}
-	if r.Header.Get(CSRFHeader) != CSRFHeaderValue {
-		return Identity{}, ErrNoCSRFHeader
+	secret, err := presentedSession(r)
+	if err != nil {
+		return Identity{}, err
 	}
 
 	ctx := r.Context()
-	key := keyOf(cookie.Value)
+	key := keyOf(secret)
 	session, err := s.cfg.Store.LoadSession(ctx, key)
 	if errors.Is(err, ErrNotFound) {
 		return Identity{}, ErrNoSession
@@ -177,6 +174,20 @@ func (s *Sessions) Authenticate(r *http.Request) (Identity, error) {
 		}
 	}
 	return session.Identity, nil
+}
+
+// presentedSession is the session secret a script's request carries. It
+// returns ErrNoSession where the cookie is absent, and ErrNoCSRFHeader where
+// the cookie arrives without CSRFHeader. It reads no store.
+func presentedSession(r *http.Request) (string, error) {
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil || cookie.Value == "" {
+		return "", ErrNoSession
+	}
+	if r.Header.Get(CSRFHeader) != CSRFHeaderValue {
+		return "", ErrNoCSRFHeader
+	}
+	return cookie.Value, nil
 }
 
 // Logout ends the session the request's cookie names and clears the cookie.
