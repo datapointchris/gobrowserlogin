@@ -4,7 +4,7 @@ run:
   modules-download-mode: readonly
 linters:
   # A linter joins by name after the sweep that makes every Go module pass it,
-  # never as a preset. The last four catch a defect rather than a style.
+  # never as a preset.
   enable:
     - gocritic
     - misspell
