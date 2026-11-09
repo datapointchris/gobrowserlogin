@@ -270,7 +270,6 @@ jobs:
             go-vet-repo-mod
             go-build-repo-mod
             go-mod-tidy-repo
-            go-test-repo-mod
             jactionlint
             sqlfluff-lint
           )
