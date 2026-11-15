@@ -70,7 +70,8 @@ type LoginAttempt struct {
 	// ReturnTo is the path on this site the browser goes to after login.
 	ReturnTo string
 
-	// ExpiresAt is ten minutes after the attempt began.
+	// ExpiresAt is when the attempt stops being accepted: the fixed attempt
+	// lifetime Login sets, counted from when it began.
 	ExpiresAt time.Time
 }
 

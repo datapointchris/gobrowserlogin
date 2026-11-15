@@ -45,7 +45,7 @@ func (s *Sessions) Callback(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(name)
 	if err != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
 		s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the browser holds no cookie for this state")
-		refuse(w, http.StatusBadRequest, "This login was not started in this browser, or took longer than ten minutes.", again)
+		refuse(w, http.StatusBadRequest, fmt.Sprintf("This login was not started in this browser, or took longer than %.0f minutes.", attemptLifetime.Minutes()), again)
 		return
 	}
 	clearCookie(w, name, http.SameSiteLaxMode)
@@ -65,7 +65,7 @@ func (s *Sessions) Callback(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	if !now.Before(attempt.ExpiresAt) {
 		s.cfg.Logger.WarnContext(ctx, "login refused", "reason", "the attempt expired")
-		refuse(w, http.StatusBadRequest, "This login took longer than ten minutes.", again)
+		refuse(w, http.StatusBadRequest, fmt.Sprintf("This login took longer than %.0f minutes.", attemptLifetime.Minutes()), again)
 		return
 	}
 
