@@ -47,11 +47,12 @@ func newDatabase(t *testing.T, server string) *sql.DB {
 	t.Helper()
 	admin := open(t, server)
 	name := fmt.Sprintf("store_test_%d", time.Now().UnixNano())
-	if _, err := admin.Exec("CREATE DATABASE " + name); err != nil {
+	if _, err := admin.ExecContext(t.Context(), "CREATE DATABASE "+name); err != nil {
 		t.Fatal(err)
 	}
+	// t.Context() is canceled before cleanups run.
 	t.Cleanup(func() {
-		if _, err := admin.Exec("DROP DATABASE " + name + " WITH (FORCE)"); err != nil {
+		if _, err := admin.ExecContext(context.Background(), "DROP DATABASE "+name+" WITH (FORCE)"); err != nil {
 			t.Errorf("drop the test's database %s: %v", name, err)
 		}
 	})

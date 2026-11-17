@@ -41,7 +41,7 @@ type browser struct {
 func newBrowser() *browser { return &browser{cookies: map[string]string{}} }
 
 func (b *browser) request(method, target string, withCSRFHeader bool) *http.Request {
-	req := httptest.NewRequest(method, target, http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), method, target, http.NoBody)
 	for name, value := range b.cookies {
 		req.AddCookie(&http.Cookie{Name: name, Value: value})
 	}
