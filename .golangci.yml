@@ -15,6 +15,7 @@ linters:
     - nolintlint # a //nolint naming no linter, or one that no longer fires
     - rowserrcheck # sql.Rows iterated with its Err never read
     - sqlclosecheck # sql.Rows or sql.Stmt closed other than by defer
+    - noctx # a subprocess, query, request or listener started with no context to end it
   settings:
     errcheck:
       check-type-assertions: false
